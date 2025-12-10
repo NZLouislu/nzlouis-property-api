@@ -21,8 +21,9 @@ async def get_properties(
         return []
 
     try:
-        table_check = supabase.table('properties').select('id').limit(1).execute()
-        table_name = 'properties_view' if table_check.data is None else 'properties'
+        # Simplified table selection - defaulting to 'properties'
+        # properties_view usage is deprecated/fragile on some environments
+        table_name = 'properties'
 
         query = supabase.table(table_name).select("""
             id,
@@ -71,11 +72,16 @@ async def get_properties(
         response = query.execute()
 
         if response.data is None:
+            # Log the error for debugging
+            print("Database query returned None for data")
             raise HTTPException(status_code=500, detail="Database query failed")
 
         return response.data
 
     except Exception as e:
+        # CRITICAL: Print error to logs for HF debugging
+        print(f"Error fetching properties: {str(e)}")
+        
         if 'timeout' in str(e).lower() or '57014' in str(e):
             raise HTTPException(
                 status_code=500,
