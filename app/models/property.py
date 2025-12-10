@@ -3,12 +3,12 @@ from typing import Optional
 from datetime import date
 
 class PropertyBase(BaseModel):
-    id: str
-    property_url: str
-    address: str
-    suburb: str
-    city: str
-    region: str
+    id: Optional[str] = None
+    property_url: Optional[str] = None
+    address: Optional[str] = None
+    suburb: Optional[str] = None
+    city: Optional[str] = None
+    region: Optional[str] = None
 
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
