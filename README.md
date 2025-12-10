@@ -1,9 +1,19 @@
+---
+title: NZ Louis Property API
+emoji: 🏠
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+license: apache-2.0
+---
+
 # 🏠 NZ Louis Property API
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![HF Spaces](https://img.shields.io/badge/🤗-Hugging%20Face%20Spaces-yellow)](https://huggingface.co/spaces/YOUR_USERNAME/nzlouis-property-api)
+[![HF Spaces](https://img.shields.io/badge/🤗-Hugging%20Face%20Spaces-yellow)](https://huggingface.co/spaces/NZLouislu/nzlouis-property-api)
 
 High-Performance New Zealand Property Data API Service
 
@@ -20,9 +30,9 @@ High-Performance New Zealand Property Data API Service
 
 ## 📺 Live Demo
 
-- **API Documentation**: [https://YOUR_USERNAME-nzlouis-property-api.hf.space/docs](https://YOUR_USERNAME-nzlouis-property-api.hf.space/docs)
-- **ReDoc Documentation**: [https://YOUR_USERNAME-nzlouis-property-api.hf.space/redoc](https://YOUR_USERNAME-nzlouis-property-api.hf.space/redoc)
-- **Health Check**: [https://YOUR_USERNAME-nzlouis-property-api.hf.space/health](https://YOUR_USERNAME-nzlouis-property-api.hf.space/health)
+- **API Documentation**: [https://NZLouislu-nzlouis-property-api.hf.space/docs](https://NZLouislu-nzlouis-property-api.hf.space/docs)
+- **ReDoc Documentation**: [https://NZLouislu-nzlouis-property-api.hf.space/redoc](https://NZLouislu-nzlouis-property-api.hf.space/redoc)
+- **Health Check**: [https://NZLouislu-nzlouis-property-api.hf.space/health](https://NZLouislu-nzlouis-property-api.hf.space/health)
 
 ## 🚀 Quick Start
 
