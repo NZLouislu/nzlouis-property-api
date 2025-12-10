@@ -1,0 +1,49 @@
+name: Sync to Hugging Face Spaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/sync_to_hf.yml"
+  workflow_dispatch:
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+        run: |
+          git config --global user.email "bot@github.com"
+          git config --global user.name "GitHub Actions Bot"
+
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_USERNAME" ] || [ -z "$SPACE_NAME" ]; then
+            echo "Error: Missing required secrets"
+            echo "Please set HF_TOKEN, HF_USERNAME, and HF_SPACE_NAME in repository secrets"
+            exit 1
+          fi
+
+          git remote add space https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME || true
+
+          git push --force space HEAD:main
+
+      - name: Verify deployment
+        env:
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+        run: |
+          echo "Deployment completed!"
+          echo "Check your Space at: https://huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME"
+          echo "API endpoint: https://$HF_USERNAME-$SPACE_NAME.hf.space"
