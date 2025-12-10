@@ -27,7 +27,7 @@ jobs:
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       HF_SPACES_URL: ${{ secrets.HF_SPACES_API_URL }}
 
     steps:
@@ -48,8 +48,6 @@ jobs:
       - name: Check and acquire lock
         id: check_lock
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FORCE_RUN: ${{ inputs.force_run }}
         run: |
           python -c "
@@ -59,79 +57,93 @@ jobs:
 
           url = os.environ.get('SUPABASE_URL')
           key = os.environ.get('SUPABASE_KEY')
-          force_run = os.environ.get('FORCE_RUN', 'false').lower() == 'true'
+
+          if not url or not key:
+              print('❌ Error: SUPABASE_URL or SUPABASE_KEY is missing.')
+              exit(1)
+
           supabase: Client = create_client(url, key)
 
-          result = supabase.table('api_keepalive_status').select('*').eq('id', 1).execute()
+          try:
+              # Try to access the table
+              result = supabase.table('api_keepalive_status').select('*').eq('id', 1).execute()
 
-          should_run = False
+              should_run = False
 
-          if not result.data:
-              print('⚙️  Status record not found, creating new record')
-              supabase.table('api_keepalive_status').insert({
-                  'id': 1,
-                  'status': 'idle'
-              }).execute()
-              should_run = True
-          else:
-              record = result.data[0]
-              status = record.get('status')
-              updated_at = record.get('updated_at')
-
-              print(f'📊 Current status: {status}')
-              print(f'🕐 Last update: {updated_at}')
-              print(f'⚡ Force run: {force_run}')
-
-              if force_run:
-                  print('⚡ Force run detected! Resetting status to idle')
-                  supabase.table('api_keepalive_status').update({
-                      'status': 'idle',
-                      'updated_at': 'now()'
-                  }).eq('id', 1).execute()
+              if not result.data:
+                  print('⚙️  Status record not found (or hidden by RLS), attempting to create...')
+                  # This uses the provided key (likely 'anon'). 
+                  # RLS policy must allow 'anon' INSERT for this to work.
+                  supabase.table('api_keepalive_status').insert({
+                      'id': 1,
+                      'status': 'idle'
+                  }).execute()
                   should_run = True
-              
-              elif status == 'running' and updated_at:
-                  from dateutil import parser
-                  last_update = parser.parse(updated_at)
-                  now = datetime.now(timezone.utc)
-                  time_diff = now - last_update
+              else:
+                  record = result.data[0]
+                  status = record.get('status')
+                  updated_at = record.get('updated_at')
+
+                  print(f'📊 Current status: {status}')
+                  print(f'🕐 Last update: {updated_at}')
                   
-                  if time_diff > timedelta(minutes=30):
-                      print(f'⏰ Status running for {time_diff}, timeout reset to idle')
+                  force_run = os.environ.get('FORCE_RUN', 'false').lower() == 'true'
+                  print(f'⚡ Force run: {force_run}')
+
+                  if force_run:
+                      print('⚡ Force run detected! Resetting status to idle')
                       supabase.table('api_keepalive_status').update({
                           'status': 'idle',
                           'updated_at': 'now()'
                       }).eq('id', 1).execute()
                       should_run = True
+                  
+                  elif status == 'running' and updated_at:
+                      from dateutil import parser
+                      last_update = parser.parse(updated_at)
+                      now = datetime.now(timezone.utc)
+                      time_diff = now - last_update
+                      
+                      if time_diff > timedelta(minutes=30):
+                          print(f'⏰ Status running for {time_diff}, timeout reset to idle')
+                          supabase.table('api_keepalive_status').update({
+                              'status': 'idle',
+                              'updated_at': 'now()'
+                          }).eq('id', 1).execute()
+                          should_run = True
+                      else:
+                          print(f'🔒 Task is running (running for {time_diff})')
+                          print('Another instance is active, graceful exit')
+                          should_run = False
+                  elif status == 'idle':
+                      print('✅ Status is idle, will continue execution')
+                      should_run = True
                   else:
-                      print(f'🔒 Task is running (running for {time_diff})')
-                      print('Another instance is active, graceful exit')
-                      should_run = False
-              elif status == 'idle':
-                  print('✅ Status is idle, will continue execution')
-                  should_run = True
-              else:
-                  print(f'⚠️  Unknown status {status}, will continue execution')
-                  should_run = True
+                      print(f'⚠️  Unknown status {status}, will continue execution')
+                      should_run = True
 
-          if should_run:
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-                  print('should_run=true', file=fh)
-          else:
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-                  print('should_run=false', file=fh)
-              exit(0)
+              if should_run:
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                      print('should_run=true', file=fh)
+              else:
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                      print('should_run=false', file=fh)
+                  exit(0)
+                  
+          except Exception as e:
+              print(f'❌ Error during check_lock: {e}')
+              if '42501' in str(e) or 'policy' in str(e):
+                  print('💡 Hint: Row Level Security (RLS) violation.')
+                  print('   Since you are using the SUPABASE_KEY (anon role), you MUST update your RLS policies.')
+                  print('   Run the SQL found in database/api_keepalive_status.sql in your Supabase SQL Editor.')
+              exit(1)
           "
 
       - name: Set status to running
         if: steps.check_lock.outputs.should_run == 'true'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python -c "
           import os
-          from datetime import datetime, timezone
           from supabase import create_client, Client
 
           url = os.environ.get('SUPABASE_URL')
@@ -148,15 +160,10 @@ jobs:
       - name: Ping HF Spaces API
         if: steps.check_lock.outputs.should_run == 'true'
         id: ping_api
-        env:
-          HF_SPACES_URL: ${{ secrets.HF_SPACES_API_URL }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python -c "
           import os
           import httpx
-          from datetime import datetime, timezone
           from supabase import create_client, Client
 
           hf_url = os.environ.get('HF_SPACES_URL')
@@ -177,10 +184,6 @@ jobs:
                   if response.status_code == 200:
                       data = response.json()
                       print(f'✅ API is healthy!')
-                      print(f'   Status: {data.get(\"status\")}')
-                      print(f'   Version: {data.get(\"version\")}')
-                      print(f'   Service: {data.get(\"service\")}')
-                      print(f'   Timestamp: {data.get(\"timestamp\")}')
                       
                       url = os.environ.get('SUPABASE_URL')
                       key = os.environ.get('SUPABASE_KEY')
@@ -196,25 +199,15 @@ jobs:
                       print('✅ Status updated to idle')
                   else:
                       print(f'⚠️  API returned status code: {response.status_code}')
-                      print(f'   Response: {response.text[:200]}')
                       exit(1)
                       
-          except httpx.TimeoutException:
-              print('❌ Request timeout (30s)')
-              exit(1)
-          except httpx.RequestError as e:
-              print(f'❌ Request error: {e}')
-              exit(1)
           except Exception as e:
-              print(f'❌ Unexpected error: {e}')
+              print(f'❌ Error: {e}')
               exit(1)
           "
 
       - name: Reset status on failure
         if: failure() && steps.check_lock.outputs.should_run == 'true'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python -c "
           import os
@@ -229,6 +222,5 @@ jobs:
               'updated_at': 'now()',
               'error_message': 'Workflow failed'
           }).eq('id', 1).execute()
-
           print('⚠️  Status reset to idle due to failure')
           "

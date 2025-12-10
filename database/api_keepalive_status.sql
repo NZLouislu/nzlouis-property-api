@@ -15,8 +15,11 @@ CREATE INDEX IF NOT EXISTS idx_status ON api_keepalive_status(status);
 
 ALTER TABLE api_keepalive_status ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow service role access"
+CREATE POLICY "Allow anon access"
 ON api_keepalive_status
 FOR ALL
-TO service_role
-USING (true);
+TO anon
+USING (true)
+WITH CHECK (true);
+
+GRANT ALL ON TABLE api_keepalive_status TO anon;
