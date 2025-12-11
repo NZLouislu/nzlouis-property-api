@@ -163,6 +163,7 @@ jobs:
         run: |
           python -c "
           import os
+          import time
           import httpx
           from supabase import create_client, Client
 
@@ -171,38 +172,71 @@ jobs:
               print('❌ Error: HF_SPACES_URL not set')
               exit(1)
 
+          # Ensure no trailing slash
+          hf_url = hf_url.rstrip('/')
+
           if not hf_url.startswith('http'):
               hf_url = 'https://' + hf_url
 
-          health_endpoint = f'{hf_url}/health'
-          print(f'🔔 Pinging: {health_endpoint}')
+          def get_direct_url(original_url):
+              # Tries to convert https://huggingface.co/spaces/User/Space to https://user-space.hf.space
+              if 'huggingface.co/spaces/' in original_url:
+                  try:
+                      parts = original_url.split('huggingface.co/spaces/')[-1].split('/')
+                      if len(parts) >= 2:
+                          username = parts[0]
+                          space_name = parts[1]
+                          return f'https://{username.lower()}-{space_name.lower()}.hf.space'
+                  except:
+                      pass
+              return None
 
-          try:
-              with httpx.Client(timeout=30.0) as client:
-                  response = client.get(health_endpoint)
-                  
-                  if response.status_code == 200:
-                      data = response.json()
-                      print(f'✅ API is healthy!')
+          target_urls = [hf_url]
+          direct_url = get_direct_url(hf_url)
+          if direct_url and direct_url != hf_url:
+              target_urls.append(direct_url)
+
+          success = False
+
+          for url in target_urls:
+              health_endpoint = f'{url}/health'
+              print(f'🔔 Pinging: {health_endpoint}')
+
+              try:
+                  with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                      response = client.get(health_endpoint)
                       
-                      url = os.environ.get('SUPABASE_URL')
-                      key = os.environ.get('SUPABASE_KEY')
-                      supabase: Client = create_client(url, key)
-                      
-                      supabase.table('api_keepalive_status').update({
-                          'status': 'idle',
-                          'last_ping_time': 'now()',
-                          'updated_at': 'now()',
-                          'error_message': None
-                      }).eq('id', 1).execute()
-                      
-                      print('✅ Status updated to idle')
-                  else:
-                      print(f'⚠️  API returned status code: {response.status_code}')
-                      exit(1)
-                      
-          except Exception as e:
-              print(f'❌ Error: {e}')
+                      if response.status_code == 200:
+                          data = response.json()
+                          print(f'✅ API is healthy!')
+                          print(f'   URL used: {url}')
+                          
+                          # Update status in DB
+                          db_url = os.environ.get('SUPABASE_URL')
+                          db_key = os.environ.get('SUPABASE_KEY')
+                          supabase: Client = create_client(db_url, db_key)
+                          
+                          supabase.table('api_keepalive_status').update({
+                              'status': 'idle',
+                              'last_ping_time': 'now()',
+                              'updated_at': 'now()',
+                              'error_message': None
+                          }).eq('id', 1).execute()
+                          
+                          print('✅ Status updated to idle')
+                          success = True
+                          break
+                      else:
+                          print(f'⚠️  API returned status code: {response.status_code}')
+                          if response.status_code == 404 and 'huggingface.co/spaces' in url:
+                              print('   (This is likely because you used the Space Page URL instead of the Direct API URL)')
+                              print('   retrying with auto-converted .hf.space URL if available...')
+
+              except Exception as e:
+                  print(f'❌ Error connecting to {url}: {e}')
+
+          if not success:
+              print('❌ All ping attempts failed.')
               exit(1)
           "
 
