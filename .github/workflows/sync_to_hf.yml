@@ -3,11 +3,7 @@ name: Sync to Hugging Face Spaces
 on:
   push:
     branches: [main]
-    paths:
-      - "app/**"
-      - "requirements.txt"
-      - "Dockerfile"
-      - ".github/workflows/sync_to_hf.yml"
+
   workflow_dispatch:
 
 jobs:

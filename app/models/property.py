@@ -19,6 +19,20 @@ class PropertyBase(BaseModel):
     last_sold_date: Optional[date] = None
     cover_image_url: Optional[str] = None
 
+    @field_validator('land_area', mode='before')
+    @classmethod
+    def parse_land_area(cls, v):
+        if isinstance(v, str):
+            # Handle cases like "433 m2", "541 m2", "-"
+            clean_v = v.lower().replace('m2', '').replace(',', '').strip()
+            if clean_v == '-' or not clean_v:
+                return None
+            try:
+                return float(clean_v)
+            except ValueError:
+                return None
+        return v
+
     class Config:
         from_attributes = True
         json_schema_extra = {
