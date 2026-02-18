@@ -5,20 +5,6 @@ on:
     - cron: "*/15 * * * *"
 
   workflow_dispatch:
-    inputs:
-      force_run:
-        description: "Force run (ignore status lock)"
-        required: false
-        default: "false"
-        type: boolean
-
-concurrency:
-  group: keepalive-hf-spaces
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-  actions: write
 
 jobs:
   ping-api:
@@ -26,235 +12,48 @@ jobs:
     timeout-minutes: 5
 
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       HF_SPACES_URL: ${{ secrets.HF_SPACES_API_URL }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install supabase httpx python-dateutil
-
-      - name: Check and acquire lock
-        id: check_lock
-        env:
-          FORCE_RUN: ${{ inputs.force_run }}
-        run: |
-          python -c "
-          import os
-          from datetime import datetime, timezone, timedelta
-          from supabase import create_client, Client
-
-          url = os.environ.get('SUPABASE_URL')
-          key = os.environ.get('SUPABASE_KEY')
-
-          if not url or not key:
-              print('❌ Error: SUPABASE_URL or SUPABASE_KEY is missing.')
-              exit(1)
-
-          supabase: Client = create_client(url, key)
-
-          try:
-              # Try to access the table
-              result = supabase.table('api_keepalive_status').select('*').eq('id', 1).execute()
-
-              should_run = False
-
-              if not result.data:
-                  print('⚙️  Status record not found (or hidden by RLS), attempting to create...')
-                  # This uses the provided key (likely 'anon'). 
-                  # RLS policy must allow 'anon' INSERT for this to work.
-                  supabase.table('api_keepalive_status').insert({
-                      'id': 1,
-                      'status': 'idle'
-                  }).execute()
-                  should_run = True
-              else:
-                  record = result.data[0]
-                  status = record.get('status')
-                  updated_at = record.get('updated_at')
-
-                  print(f'📊 Current status: {status}')
-                  print(f'🕐 Last update: {updated_at}')
-                  
-                  force_run = os.environ.get('FORCE_RUN', 'false').lower() == 'true'
-                  print(f'⚡ Force run: {force_run}')
-
-                  if force_run:
-                      print('⚡ Force run detected! Resetting status to idle')
-                      supabase.table('api_keepalive_status').update({
-                          'status': 'idle',
-                          'updated_at': 'now()'
-                      }).eq('id', 1).execute()
-                      should_run = True
-                  
-                  elif status == 'running' and updated_at:
-                      from dateutil import parser
-                      last_update = parser.parse(updated_at)
-                      now = datetime.now(timezone.utc)
-                      time_diff = now - last_update
-                      
-                      if time_diff > timedelta(minutes=30):
-                          print(f'⏰ Status running for {time_diff}, timeout reset to idle')
-                          supabase.table('api_keepalive_status').update({
-                              'status': 'idle',
-                              'updated_at': 'now()'
-                          }).eq('id', 1).execute()
-                          should_run = True
-                      else:
-                          print(f'🔒 Task is running (running for {time_diff})')
-                          print('Another instance is active, graceful exit')
-                          should_run = False
-                  elif status == 'idle':
-                      print('✅ Status is idle, will continue execution')
-                      should_run = True
-                  else:
-                      print(f'⚠️  Unknown status {status}, will continue execution')
-                      should_run = True
-
-              if should_run:
-                  with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-                      print('should_run=true', file=fh)
-              else:
-                  with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-                      print('should_run=false', file=fh)
-                  exit(0)
-                  
-          except Exception as e:
-              print(f'❌ Error during check_lock: {e}')
-              if '42501' in str(e) or 'policy' in str(e):
-                  print('💡 Hint: Row Level Security (RLS) violation.')
-                  print('   Since you are using the SUPABASE_KEY (anon role), you MUST update your RLS policies.')
-                  print('   Run the SQL found in database/api_keepalive_status.sql in your Supabase SQL Editor.')
-              exit(1)
-          "
-
-      - name: Set status to running
-        if: steps.check_lock.outputs.should_run == 'true'
-        run: |
-          python -c "
-          import os
-          from supabase import create_client, Client
-
-          url = os.environ.get('SUPABASE_URL')
-          key = os.environ.get('SUPABASE_KEY')
-          supabase: Client = create_client(url, key)
-
-          supabase.table('api_keepalive_status').update({
-              'status': 'running',
-              'updated_at': 'now()'
-          }).eq('id', 1).execute()
-          print('✅ Status set to running')
-          "
-
       - name: Ping HF Spaces API
-        if: steps.check_lock.outputs.should_run == 'true'
-        id: ping_api
         run: |
-          python -c "
-          import os
-          import time
-          import httpx
-          from supabase import create_client, Client
+          if [ -z "$HF_SPACES_URL" ]; then
+            echo "❌ Error: HF_SPACES_URL not set"
+            exit 1
+          fi
 
-          hf_url = os.environ.get('HF_SPACES_URL')
-          if not hf_url:
-              print('❌ Error: HF_SPACES_URL not set')
-              exit(1)
+          # Ensure URL starts with https://
+          URL=$HF_SPACES_URL
+          if [[ ! $URL =~ ^http ]]; then
+            URL="https://$URL"
+          fi
+          
+          # Remove trailing slash
+          URL=${URL%/}
 
-          # Ensure no trailing slash
-          hf_url = hf_url.rstrip('/')
+          echo "🔔 Pinging: $URL/health"
+          
+          # Try main URL
+          status=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health")
+          echo "Status Code: $status"
 
-          if not hf_url.startswith('http'):
-              hf_url = 'https://' + hf_url
-
-          def get_direct_url(original_url):
-              # Tries to convert https://huggingface.co/spaces/User/Space to https://user-space.hf.space
-              if 'huggingface.co/spaces/' in original_url:
-                  try:
-                      parts = original_url.split('huggingface.co/spaces/')[-1].split('/')
-                      if len(parts) >= 2:
-                          username = parts[0]
-                          space_name = parts[1]
-                          return f'https://{username.lower()}-{space_name.lower()}.hf.space'
-                  except:
-                      pass
-              return None
-
-          target_urls = [hf_url]
-          direct_url = get_direct_url(hf_url)
-          if direct_url and direct_url != hf_url:
-              target_urls.append(direct_url)
-
-          success = False
-
-          for url in target_urls:
-              health_endpoint = f'{url}/health'
-              print(f'🔔 Pinging: {health_endpoint}')
-
-              try:
-                  with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-                      response = client.get(health_endpoint)
-                      
-                      if response.status_code == 200:
-                          data = response.json()
-                          print(f'✅ API is healthy!')
-                          print(f'   URL used: {url}')
-                          
-                          # Update status in DB
-                          db_url = os.environ.get('SUPABASE_URL')
-                          db_key = os.environ.get('SUPABASE_KEY')
-                          supabase: Client = create_client(db_url, db_key)
-                          
-                          supabase.table('api_keepalive_status').update({
-                              'status': 'idle',
-                              'last_ping_time': 'now()',
-                              'updated_at': 'now()',
-                              'error_message': None
-                          }).eq('id', 1).execute()
-                          
-                          print('✅ Status updated to idle')
-                          success = True
-                          break
-                      else:
-                          print(f'⚠️  API returned status code: {response.status_code}')
-                          if response.status_code == 404 and 'huggingface.co/spaces' in url:
-                              print('   (This is likely because you used the Space Page URL instead of the Direct API URL)')
-                              print('   retrying with auto-converted .hf.space URL if available...')
-
-              except Exception as e:
-                  print(f'❌ Error connecting to {url}: {e}')
-
-          if not success:
-              print('❌ All ping attempts failed.')
-              exit(1)
-          "
-
-      - name: Reset status on failure
-        if: failure() && steps.check_lock.outputs.should_run == 'true'
-        run: |
-          python -c "
-          import os
-          from supabase import create_client, Client
-
-          url = os.environ.get('SUPABASE_URL')
-          key = os.environ.get('SUPABASE_KEY')
-          supabase: Client = create_client(url, key)
-
-          supabase.table('api_keepalive_status').update({
-              'status': 'idle',
-              'updated_at': 'now()',
-              'error_message': 'Workflow failed'
-          }).eq('id', 1).execute()
-          print('⚠️  Status reset to idle due to failure')
-          "
+          if [ "$status" -eq 200 ]; then
+            echo "✅ API is healthy!"
+          else
+            # Try converting to .hf.space format if it looks like a HF UI URL
+            if [[ "$URL" == *"huggingface.co/spaces/"* ]]; then
+               parts=($(echo $URL | sed 's/.*\///g'))
+               username=$(echo $URL | sed 's/.*spaces\/\([^\/]*\)\/.*/\1/')
+               spacename=$(echo $URL | sed 's/.*spaces\/[^\/]*\/\([^\/]*\).*/\1/')
+               DIRECT_URL="https://${username,,}-${spacename,,}.hf.space"
+               echo "🔄 Retrying with direct URL: $DIRECT_URL/health"
+               status=$(curl -s -o /dev/null -w "%{http_code}" "$DIRECT_URL/health")
+               echo "Status Code: $status"
+               if [ "$status" -eq 200 ]; then
+                 echo "✅ Direct API is healthy!"
+                 exit 0
+               fi
+            fi
+            echo "❌ All ping attempts failed."
+            exit 1
+          fi
