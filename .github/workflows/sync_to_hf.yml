@@ -14,29 +14,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push to Hugging Face Space
+      - name: Push to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_USERNAME: ${{ secrets.HF_USERNAME }}
           SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git config --global user.email "bot@github.com"
-          git config --global user.name "GitHub Actions Bot"
-
           if [ -z "$HF_TOKEN" ] || [ -z "$HF_USERNAME" ] || [ -z "$SPACE_NAME" ]; then
-            echo "Error: Missing required secrets"
-            echo "Please set HF_TOKEN, HF_USERNAME, and HF_SPACE_NAME in repository secrets"
+            echo "❌ Error: Missing required secrets (HF_TOKEN, HF_USERNAME, or HF_SPACE_NAME)"
             exit 1
           fi
 
-          git remote add space https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME || true
+          # Ensure we have a clean state and add HF as a remote
+          git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME || git remote set-url hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE_NAME
 
-          git push --force space HEAD:main
+          echo "🚀 Pushing to Hugging Face..."
+          git push --force hf HEAD:main
 
       - name: Verify deployment
         env:

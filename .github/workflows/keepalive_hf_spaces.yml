@@ -15,7 +15,7 @@ jobs:
       HF_SPACES_URL: ${{ secrets.HF_SPACES_API_URL }}
 
     steps:
-      - name: Ping HF Spaces API
+      - name: Keep Alive Ping (v2)
         run: |
           if [ -z "$HF_SPACES_URL" ]; then
             echo "❌ Error: HF_SPACES_URL not set"
