@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         return f"cockroachdb://{self.cockroach_user}:{self.cockroach_password}@{self.cockroach_host}:{self.cockroach_port}/{self.cockroach_db}?sslmode=require"
 
     api_title: str = "NZ Louis Property API"
-    api_version: str = "1.0.0"
+    api_version: str = "1.0.1"
     api_prefix: str = "/api"
 
     max_page_size: int = 50
