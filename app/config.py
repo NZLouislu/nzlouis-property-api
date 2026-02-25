@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        return f"postgresql://{self.cockroach_user}:{self.cockroach_password}@{self.cockroach_host}:{self.cockroach_port}/{self.cockroach_db}?sslmode=verify-full"
+        return f"postgresql://{self.cockroach_user}:{self.cockroach_password}@{self.cockroach_host}:{self.cockroach_port}/{self.cockroach_db}?sslmode=verify-full&sslrootcert=system"
 
     api_title: str = "NZ Louis Property API"
     api_version: str = "1.0.0"

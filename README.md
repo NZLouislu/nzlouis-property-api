@@ -25,7 +25,7 @@ High-Performance New Zealand Property Data API Service
 - 📊 **Real-time Queries**: Multi-dimensional search by city, suburb, address, and more
 - 🌐 **Auto Documentation**: Interactive API docs auto-generated with OpenAPI/Swagger
 - 🎯 **Type Safety**: Pydantic data validation ensuring data quality
-- 💾 **Database**: Integrated Supabase (PostgreSQL) real-time database
+- 💾 **Database**: Integrated CockroachDB (distributed PostgreSQL)
 - 🆓 **Free Deployment**: Hosted on Hugging Face Spaces with zero operational cost
 
 ## 📺 Live Demo
@@ -52,7 +52,7 @@ pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env and add your Supabase credentials
+# Edit .env and add your CockroachDB credentials
 
 # Start development server
 uvicorn app.main:app --reload --port 8000
