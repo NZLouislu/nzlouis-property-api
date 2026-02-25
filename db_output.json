@@ -1,0 +1,86 @@
+{
+  "properties": [
+    {
+      "city": "Auckland - City",
+      "count": 66042
+    },
+    {
+      "city": "Auckland - Franklin",
+      "count": 23178
+    },
+    {
+      "city": "Auckland - Manukau",
+      "count": 80299
+    },
+    {
+      "city": "Auckland - North Shore",
+      "count": 83723
+    },
+    {
+      "city": "Auckland - Papakura",
+      "count": 25910
+    },
+    {
+      "city": "Auckland - Rodney",
+      "count": 56836
+    },
+    {
+      "city": "Auckland - Waitakere",
+      "count": 80410
+    },
+    {
+      "city": "Kapiti Coast District",
+      "count": 24859
+    },
+    {
+      "city": "Lower Hutt City",
+      "count": 40450
+    },
+    {
+      "city": "Porirua City",
+      "count": 19373
+    },
+    {
+      "city": "Upper Hutt City",
+      "count": 17592
+    },
+    {
+      "city": "Wellington",
+      "count": 1
+    },
+    {
+      "city": "Wellington City",
+      "count": 67578
+    }
+  ],
+  "forecast": [
+    {
+      "city": "Auckland - Papakura",
+      "count": 10
+    },
+    {
+      "city": "Auckland - Rodney",
+      "count": 5
+    },
+    {
+      "city": "Auckland - City",
+      "count": 4
+    },
+    {
+      "city": "Auckland - Waitakere",
+      "count": 6
+    },
+    {
+      "city": "Auckland - Manukau",
+      "count": 6
+    },
+    {
+      "city": "Auckland - Franklin",
+      "count": 6
+    },
+    {
+      "city": "Auckland - North Shore",
+      "count": 2
+    }
+  ]
+}

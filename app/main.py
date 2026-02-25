@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from datetime import datetime, timezone
 from app.config import get_settings
-from app.routers import properties, forecast, regions
+from app.routers import properties, forecast, regions, analysis
 
 settings = get_settings()
 
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(properties.router, prefix=settings.api_prefix)
 app.include_router(forecast.router, prefix=settings.api_prefix)
 app.include_router(regions.router, prefix=settings.api_prefix)
+app.include_router(analysis.router, prefix=settings.api_prefix)
 
 @app.get("/")
 async def root():
