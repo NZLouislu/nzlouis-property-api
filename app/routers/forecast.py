@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models.property import ForecastProperty
-from app.services.supabase_client import get_supabase_client
-from supabase import Client
+from app.services.database import get_db
 
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
 
@@ -12,70 +13,58 @@ async def get_forecast_properties(
     page: int = Query(0, ge=0, description="Page number"),
     page_size: int = Query(9, ge=1, le=50, description="Items per page"),
     suburbs: Optional[str] = Query(None, description="Comma-separated suburbs"),
-    supabase: Client = Depends(get_supabase_client)
+    db: Session = Depends(get_db)
 ) -> List[ForecastProperty]:
     try:
-        query = supabase.table('properties_with_latest_status').select("""
-            property_url,
-            last_sold_price,
-            address,
-            suburb,
-            city,
-            bedrooms,
-            bathrooms,
-            car_spaces,
-            land_area,
-            last_sold_date,
-            cover_image_url,
-            confidence_score,
-            predicted_status
-        """).eq("city", city).order("confidence_score", desc=True)
+        sql = """
+            SELECT 
+                property_url, last_sold_price, address, suburb, city, 
+                bedrooms, bathrooms, car_spaces, land_area, last_sold_date, 
+                cover_image_url, confidence_score, predicted_status
+            FROM properties_with_latest_status
+            WHERE city = :city
+        """
+        params = {"city": city}
 
         if suburbs:
             suburb_list = [s.strip() for s in suburbs.split(',') if s.strip()]
             if suburb_list:
-                query = query.in_("suburb", suburb_list)
+                sql += " AND suburb = ANY(:suburbs)"
+                params["suburbs"] = suburb_list
 
-        start = page * page_size
-        end = start + page_size - 1
-        query = query.range(start, end)
+        sql += " ORDER BY confidence_score DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = page_size
+        params["offset"] = page * page_size
 
-        response = query.execute()
+        result = db.execute(text(sql), params)
+        rows = result.mappings().all()
 
-        if response.data:
-            return response.data
+        if rows:
+            return [dict(row) for row in rows]
 
         print(f"[INFO] No forecast data for {city}, falling back to properties table")
 
-        fallback_query = supabase.table('properties').select("""
-            property_url,
-            last_sold_price,
-            address,
-            suburb,
-            city,
-            bedrooms,
-            bathrooms,
-            car_spaces,
-            land_area,
-            last_sold_date,
-            cover_image_url
-        """).eq("city", city)
-
+        fallback_sql = """
+            SELECT 
+                property_url, last_sold_price, address, suburb, city, 
+                bedrooms, bathrooms, car_spaces, land_area, last_sold_date, 
+                cover_image_url
+            FROM properties
+            WHERE city = :city
+        """
         if suburbs:
-            suburb_list = [s.strip() for s in suburbs.split(',') if s.strip()]
             if suburb_list:
-                fallback_query = fallback_query.in_("suburb", suburb_list)
+                fallback_sql += " AND suburb = ANY(:suburbs)"
 
-        fallback_query = fallback_query.range(start, end)
-        fallback_response = fallback_query.execute()
+        fallback_sql += " LIMIT :limit OFFSET :offset"
+        
+        fallback_result = db.execute(text(fallback_sql), params)
+        fallback_rows = fallback_result.mappings().all()
 
-        if fallback_response.data:
-            return [
-                {**item, 'confidence_score': 0.0, 'predicted_status': 'Unknown', 'predicted_price': 0}
-                for item in fallback_response.data
-            ]
-
-        return []
+        return [
+            {**dict(row), 'confidence_score': 0.0, 'predicted_status': 'Unknown', 'predicted_price': 0}
+            for row in fallback_rows
+        ]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -85,23 +74,26 @@ async def autocomplete_forecast(
     query: str = Query(..., min_length=1, description="Search keyword"),
     city: Optional[str] = Query(None, description="City filter"),
     limit: int = Query(10, ge=1, le=20, description="Result limit"),
-    supabase: Client = Depends(get_supabase_client)
+    db: Session = Depends(get_db)
 ) -> List[str]:
     try:
-        db_query = supabase.table('properties_with_latest_status').select('address')
+        sql = "SELECT address FROM properties_with_latest_status WHERE 1=1"
+        params = {"limit": limit}
 
         if city:
-            db_query = db_query.eq('city', city)
+            sql += " AND city = :city"
+            params["city"] = city
 
         if query[0].isdigit():
-            db_query = db_query.ilike('address', f'{query}%')
+            sql += " AND address ILIKE :query_start"
+            params["query_start"] = f"{query}%"
         else:
-            db_query = db_query.ilike('address', f'%{query}%')
+            sql += " AND address ILIKE :query_contains"
+            params["query_contains"] = f"%{query}%"
 
-        db_query = db_query.limit(limit)
-        response = db_query.execute()
-
-        return [item['address'] for item in response.data] if response.data else []
+        sql += " LIMIT :limit"
+        result = db.execute(text(sql), params)
+        return [row[0] for row in result.all()]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

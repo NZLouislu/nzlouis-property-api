@@ -2,8 +2,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
-    supabase_url: str
-    supabase_key: str
+    cockroach_user: str
+    cockroach_password: str
+    cockroach_host: str
+    cockroach_port: int
+    cockroach_db: str
+
+    @property
+    def database_url(self) -> str:
+        return f"postgresql://{self.cockroach_user}:{self.cockroach_password}@{self.cockroach_host}:{self.cockroach_port}/{self.cockroach_db}?sslmode=verify-full"
 
     api_title: str = "NZ Louis Property API"
     api_version: str = "1.0.0"

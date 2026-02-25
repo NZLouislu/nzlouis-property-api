@@ -4,14 +4,14 @@ from unittest.mock import Mock, patch
 from app.main import app
 
 @pytest.fixture
-def mock_supabase():
+def mock_db():
     mock = Mock()
     return mock
 
 @pytest.fixture
-def client(mock_supabase):
-    from app.services.supabase_client import get_supabase_client
-    app.dependency_overrides[get_supabase_client] = lambda: mock_supabase
+def client(mock_db):
+    from app.services.database import get_db
+    app.dependency_overrides[get_db] = lambda: mock_db
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()

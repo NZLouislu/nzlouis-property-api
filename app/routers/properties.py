@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models.property import PropertyBase
-from app.services.supabase_client import get_supabase_client
-from supabase import Client
+from app.services.database import get_db
 
 router = APIRouter(prefix="/property", tags=["Properties"])
 
@@ -15,80 +16,71 @@ async def get_properties(
     search: Optional[str] = Query(None, description="Address search keyword"),
     exact: bool = Query(False, description="Exact search mode"),
     id: Optional[str] = Query(None, description="Property ID"),
-    supabase: Client = Depends(get_supabase_client)
+    db: Session = Depends(get_db)
 ) -> List[PropertyBase]:
     if not id and not exact and not city:
         return []
 
     try:
-        # Simplified table selection - defaulting to 'properties'
-        # properties_view usage is deprecated/fragile on some environments
         table_name = 'properties'
-
-        query = supabase.table(table_name).select("""
-            id,
-            property_url,
-            last_sold_price,
-            address,
-            suburb,
-            city,
-            bedrooms,
-            bathrooms,
-            car_spaces,
-            land_area,
-            last_sold_date,
-            region,
-            cover_image_url
-        """)
+        
+        sql = f"""
+            SELECT 
+                id, property_url, last_sold_price, address, suburb, city, 
+                bedrooms, bathrooms, car_spaces, land_area, last_sold_date, 
+                region, cover_image_url
+            FROM {table_name}
+            WHERE 1=1
+        """
+        params = {}
 
         if id:
-            query = query.eq("id", id)
+            sql += " AND id = :id"
+            params["id"] = id
         else:
             if not exact and city:
-                query = query.eq("city", city)
+                sql += " AND city = :city"
+                params["city"] = city
 
             if not exact and suburbs:
                 suburb_list = [s.strip() for s in suburbs.split(',') if s.strip()]
                 if suburb_list:
-                    query = query.in_("suburb", suburb_list)
+                    sql += " AND suburb = ANY(:suburbs)"
+                    params["suburbs"] = suburb_list
 
             if search:
                 if exact:
                     street_address = search.split(',')[0].strip()
-                    query = query.ilike('address', f'{street_address}%').limit(1)
+                    sql += " AND address ILIKE :search_exact"
+                    params["search_exact"] = f"{street_address}%"
                 else:
                     if search[0].isdigit():
-                        query = query.ilike('address', f'{search}%')
+                        sql += " AND address ILIKE :search_start"
+                        params["search_start"] = f"{search}%"
                     else:
-                        query = query.ilike('address', f'%{search}%')
+                        sql += " AND address ILIKE :search_contains"
+                        params["search_contains"] = f"%{search}%"
 
             if not exact and not id:
-                query = query.order("id")
+                sql += " ORDER BY id"
 
-            start = page * page_size
-            end = start + page_size - 1
-            query = query.range(start, end)
+            sql += " LIMIT :limit OFFSET :offset"
+            params["limit"] = page_size
+            params["offset"] = page * page_size
 
-        response = query.execute()
-
-        if response.data is None:
-            # Log the error for debugging
-            print("Database query returned None for data")
-            raise HTTPException(status_code=500, detail="Database query failed")
-
-        return response.data
+        result = db.execute(text(sql), params)
+        rows = result.mappings().all()
+        
+        return [dict(row) for row in rows]
 
     except Exception as e:
-        # CRITICAL: Print error to logs for HF debugging
         print(f"Error fetching properties: {str(e)}")
-        
         if 'timeout' in str(e).lower() or '57014' in str(e):
             raise HTTPException(
                 status_code=500,
                 detail={
-                    "error": f"Database query timeout. City '{city}' has too much data.",
-                    "code": "TIMEOUT",
-                    "suggestion": "Please select specific suburbs to narrow the search. Maximum 2 pages (18 items) to prevent timeout"
+                    "error": "Database query timeout.",
+                    "code": "TIMEOUT"
                 }
             )
         raise HTTPException(status_code=500, detail=str(e))
@@ -98,23 +90,26 @@ async def autocomplete_properties(
     query: str = Query(..., min_length=1, description="Search keyword"),
     city: Optional[str] = Query(None, description="City filter"),
     limit: int = Query(10, ge=1, le=20, description="Result limit"),
-    supabase: Client = Depends(get_supabase_client)
+    db: Session = Depends(get_db)
 ) -> List[str]:
     try:
-        db_query = supabase.table('properties').select('address')
+        sql = "SELECT address FROM properties WHERE 1=1"
+        params = {"limit": limit}
 
         if city:
-            db_query = db_query.eq('city', city)
+            sql += " AND city = :city"
+            params["city"] = city
 
         if query[0].isdigit():
-            db_query = db_query.ilike('address', f'{query}%')
+            sql += " AND address ILIKE :query_start"
+            params["query_start"] = f"{query}%"
         else:
-            db_query = db_query.ilike('address', f'%{query}%')
+            sql += " AND address ILIKE :query_contains"
+            params["query_contains"] = f"%{query}%"
 
-        db_query = db_query.limit(limit)
-        response = db_query.execute()
-
-        return [item['address'] for item in response.data] if response.data else []
+        sql += " LIMIT :limit"
+        result = db.execute(text(sql), params)
+        return [row[0] for row in result.all()]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
